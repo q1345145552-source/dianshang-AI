@@ -3,14 +3,18 @@
 # 三块应用：web(网站) / api(服务器) / worker(干活进程)
 # 三个基础设施：postgres(数据库) / redis(队列) / minio(文件存储)
 #
-# 日常用 package.json 同级目录的 Makefile，不要直接敲 docker compose。
+# 日常用同级目录的 Makefile，不要直接敲 docker compose。
 #   起：make up          停：make down        清空重来：make clean
+#   一键验证：make verify
 #
 # 环境差异写在 docker-compose.dev.yml / .test.yml / .prod.yml 里。
+#
+# 镜像版本全部钉到具体版本号，不用 latest 这种会漂的写法。
+# 跑服务的进程都不是 root。
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.15-alpine
     environment:
       POSTGRES_USER: ${PGUSER}
       POSTGRES_PASSWORD: ${PGPASSWORD}
@@ -25,21 +29,53 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.11-alpine
+    # 密码只在 REDIS_PASSWORD 有值的时候才给队列设上，没值就不设。
+    # 应用侧读的是同一个变量，所以两边要么都有密码要么都没有，
+    # 不会出现"应用带着密码去连一个没设密码的队列"。
+    #
+    # 这里自己用 setpriv 降权成 redis 用户。因为覆盖了 command 之后，
+    # 镜像自带的 entrypoint 就不会再帮忙降权了（它只在第一个参数是
+    # redis-server 的时候才降权），不自己降就会变成用 root 跑。
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec /usr/bin/setpriv --reuid redis --regid redis --clear-groups \
+            redis-server --requirepass "$$REDIS_PASSWORD"
+        fi
+        exec /usr/bin/setpriv --reuid redis --regid redis --clear-groups redis-server
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        - CMD-SHELL
+        - |
+          if [ -n "$$REDIS_PASSWORD" ]; then
+            redis-cli --no-auth-warning -a "$$REDIS_PASSWORD" ping
+          else
+            redis-cli ping
+          fi | grep -q PONG
       interval: 5s
       timeout: 5s
       retries: 12
     restart: unless-stopped
 
   minio:
-    # 注意：MinIO 官方在 2025 年 10 月把镜像从 Docker Hub 下架了，
-    # 现在要从 quay.io 拉。写成 minio/minio:latest 会报仓库不存在。
-    image: quay.io/minio/minio:latest
-    command: server /data --console-address ":9001"
+    # MinIO 官方在 2025 年 10 月把镜像从 Docker Hub 下架了，现在要从 quay.io 拉。
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # 不用 root 跑服务：先把数据目录属主改成 1000，再降权成 1000 执行。
+    # 跟 postgres、redis 官方镜像一个思路，最后跑服务的进程不是 root。
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - |
+        chown -R 1000:1000 /data
+        exec chroot --userspec=1000:1000 / minio server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}

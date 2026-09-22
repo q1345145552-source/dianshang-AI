@@ -42,6 +42,12 @@ make ps
 make logs
 ```
 
+想把能自动查的一次查完，敲这个。每项打通过或者失败，最后汇总。
+
+```
+make verify
+```
+
 ## 怎么停
 
 ```
@@ -105,11 +111,19 @@ make down ENV=test
 
 三套的配置分别写在 docker-compose.dev.yml、docker-compose.test.yml、docker-compose.prod.yml 里，公共部分在 docker-compose.yml。
 
-环境变量也是三份，分别是 .env.dev、.env.test、.env.prod。这三个文件不进仓库。仓库里只有模板 .env.example，make up 发现缺哪份就自动复制一份出来。
+环境变量也是三份，分别是 .env.dev、.env.test、.env.prod。这三个文件不进仓库。仓库里只有模板 .env.example。
+
+配置文件的规矩不一样。开发环境缺了会自动从模板复制一份出来，图个方便。测试和线上缺了就直接停下报错，告诉你缺哪一份，不会拿占位值糊弄过去。这两套的配置要自己创建，密码换成真实值。
 
 ## 怎么确认真的起来了
 
-下面每一步都实际敲过。
+最省事的是跑这一条命令，它把能自动查的都查一遍，每项打通过或者失败，最后汇总，有失败就以非零退出码结束。
+
+```
+make verify
+```
+
+下面是逐项手动查的办法，每一步都实际敲过。
 
 ### 一、看容器
 
@@ -139,6 +153,10 @@ curl http://localhost:3002/health
 
 会返回一段 JSON，status 是 ok。
 
+三个依赖里只要有一个连不上，这个接口就直接回 503，不是把返回内容里的字样改一改。所以敲命令的人看状态码就知道成没成，前面加 -f 的话 curl 自己就会报错退出。
+
+接口还有时间上限。任何一项卡住不回应，三秒内就判失败返回，不会一直挂在那。
+
 ### 四、确认数据库、队列、文件存储真的接上了
 
 先看健康检查接口的返回。
@@ -149,7 +167,20 @@ curl http://localhost:3002/health
 
 返回里有 checks 这一段，database、queue、storage 三个都应该是 ok。
 
-这个 ok 不是写死的，是服务器每次请求都真的去连一遍数据库、ping 一下队列、列一下文件存储的桶，连上了才回 ok。
+这个 ok 不是写死的，是服务器每次请求都真的去连一遍数据库、ping 一下队列、列一下文件存储的桶，连上了才回 ok。任何一项连不上，整个接口回 503。
+
+自己验一遍也简单，把数据库停掉再看这个接口。
+
+```
+docker stop dianshangzuotu-dev-postgres-1
+make health
+```
+
+make health 会直接报错，不是打个 ok 出来。看完记得起回来。
+
+```
+docker start dianshangzuotu-dev-postgres-1
+```
 
 然后可以自己在外面再验一遍，绕过应用，直接连基础设施。
 
@@ -199,6 +230,32 @@ docker ps -a
 
 列表里找不到任何名字带 dianshangzuotu 的容器，说明停干净了，没有偷偷留着的。
 
+## 镜像版本和运行权限
+
+编排文件里的镜像版本全部钉到具体版本号，没有 latest 这种会漂的写法。postgres 用 16.15-alpine，redis 用 7.4.11-alpine，minio 用 RELEASE.2025-09-07T16-13-09Z，构建用的 node 用 22.23.2-alpine。
+
+六个容器里跑服务的进程都不是 root。
+
+网站、服务器、干活进程这三个是我们自己构建的镜像，里面建了个 uid 1001 的普通用户来跑。
+
+postgres 和 redis 的官方镜像本来就会降权，跑服务的分别是 postgres 用户和 redis 用户。
+
+minio 的官方镜像默认用 root，我们在启动命令里先把数据目录属主改成 1000，再降权成 1000 执行。
+
+make verify 的最后一项就是查这个，六个容器挨个看 PID 1 的实际 UID。
+
+## 队列密码
+
+队列的密码两边永远是同一个来源，就是 .env 里的 REDIS_PASSWORD。
+
+这个值不为空的时候，队列启动时就带上密码，应用也用这个密码去连。
+
+这个值为空的时候，队列不设密码，应用也不带密码去连。
+
+所以不会出现应用带着密码去连一个没设密码的队列这种情况。
+
+想给开发环境加上密码，改 .env.dev 里的 REDIS_PASSWORD，然后 make clean 再 make up。
+
 ## 代码和密钥
 
 代码里没有硬编码任何密钥或密码。数据库密码、MinIO 密码这些全部通过环境变量传进去，代码只读环境变量。
@@ -217,6 +274,7 @@ docker ps -a
   docker-compose.test.yml           测试环境差异
   docker-compose.prod.yml           线上环境差异
   .env.example                      环境变量模板
+  scripts/verify.sh                 一键验证脚本
   apps/web/                         网站，Next.js
   apps/api/                         服务器，NestJS
   apps/worker/                      干活进程，Node 加 BullMQ

@@ -22,6 +22,11 @@ async function main() {
     database: requireEnv('PGDATABASE'),
     connectionTimeoutMillis: 5000,
   });
+  // 数据库或者队列断开时要接住 error 事件，
+  // 不然未处理的 error 会把整个进程带崩。
+  pool.on('error', (err) => {
+    console.warn(`[worker] database connection error: ${err.message}`);
+  });
   await pool.query('SELECT 1');
   console.log('[worker] database connected');
 
@@ -30,6 +35,9 @@ async function main() {
     port: Number(process.env.REDIS_PORT ?? 6379),
     password: process.env.REDIS_PASSWORD || undefined,
     maxRetriesPerRequest: null,
+  });
+  connection.on('error', (err) => {
+    console.warn(`[worker] queue connection error: ${err.message}`);
   });
   await connection.ping();
   console.log('[worker] queue connected');
@@ -55,6 +63,10 @@ async function main() {
 
   worker.on('ready', () => {
     console.log(`[worker] ready, waiting on queue "${QUEUE_NAME}"`);
+  });
+
+  worker.on('error', (err) => {
+    console.warn(`[worker] job error: ${err.message}`);
   });
 
   const shutdown = async (signal: string) => {

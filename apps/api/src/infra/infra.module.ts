@@ -31,6 +31,12 @@ function requireEnv(name: string): string {
           database: requireEnv('PGDATABASE'),
           connectionTimeoutMillis: 5000,
         });
+        // 数据库重启，或者空闲连接被上游掐断时，pg 会在连接池上发 error 事件。
+        // 不接住的话 Node 会因为未处理的 error 事件直接退出，
+        // 数据库抖一下就能把整个服务带崩，必须接住。
+        pool.on('error', (err) => {
+          logger.warn(`database connection error: ${err.message}`);
+        });
         await pool.query('SELECT 1');
         logger.log('database connected');
         return pool;
@@ -46,6 +52,10 @@ function requireEnv(name: string): string {
           lazyConnect: true,
           maxRetriesPerRequest: 2,
           retryStrategy: (times) => (times > 3 ? null : Math.min(times * 200, 1000)),
+        });
+        // 同理，队列连接出错也要接住。
+        client.on('error', (err) => {
+          logger.warn(`queue connection error: ${err.message}`);
         });
         await client.connect();
         await client.ping();
