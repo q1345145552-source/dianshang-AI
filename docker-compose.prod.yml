@@ -1,0 +1,30 @@
+# 线上环境覆盖
+#
+# 特点：基础设施不对外，只有应用端口暴露（等接上反向代理后可以再去掉）。
+#       所有服务改成 always 重启。
+#       正式上线前必须用 .env.prod 里的真实凭据，且不要提交到仓库。
+#
+# 起：make up ENV=prod
+
+services:
+  postgres:
+    restart: always
+
+  redis:
+    restart: always
+
+  minio:
+    restart: always
+
+  api:
+    restart: always
+    ports:
+      - "${API_PORT}:3001"
+
+  worker:
+    restart: always
+
+  web:
+    restart: always
+    ports:
+      - "${WEB_PORT}:3000"
