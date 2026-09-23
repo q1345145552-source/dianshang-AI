@@ -152,6 +152,8 @@ services:
       context: ./apps/web
     environment:
       APP_ENV: ${APP_ENV}
+      # 页面在服务端渲染时调后端用的内网地址，容器之间直接用服务名
+      API_INTERNAL_URL: http://api:3001
     depends_on:
       - api
     restart: unless-stopped
