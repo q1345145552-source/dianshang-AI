@@ -33,7 +33,7 @@ PROJECT  := dianshangzuotu-$(ENV)
 ENV_FILE := .env.$(ENV)
 COMPOSE  := docker compose -p $(PROJECT) -f docker-compose.yml -f $(OVERRIDE) --env-file $(ENV_FILE)
 
-.PHONY: up down clean ps logs health verify config
+.PHONY: up down clean ps logs health verify check-balance config
 
 up:
 	@if [ ! -f $(ENV_FILE) ]; then \
@@ -70,6 +70,9 @@ health:
 
 verify:
 	@ENV=$(ENV) bash scripts/verify.sh
+
+check-balance:
+	@ENV=$(ENV) bash scripts/check-balance.sh
 
 config:
 	$(COMPOSE) config

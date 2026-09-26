@@ -4,6 +4,9 @@ const API_INTERNAL_URL = process.env.API_INTERNAL_URL ?? 'http://localhost:3001'
 const SESSION_COOKIE = 'session';
 const AFTER_LOGIN = '/workspace';
 
+// 这几个页面得先登录才能看
+const PROTECTED_PATHS = ['/workspace', '/wallet'];
+
 // 登录后要回的那一页，只认本站地址。
 // 别人塞个站外网址进来一律换成工作台，不然就是拿我们这里当跳板。
 function safeNext(raw: string | null): string {
@@ -53,8 +56,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(AFTER_LOGIN, request.url));
   }
 
-  // 没登录的人打开工作台，送去登录页，并且记住他本来想去哪
-  if (!loggedIn && pathname === '/workspace') {
+  // 没登录的人打开要登录才能看的页面，送去登录页，并且记住他本来想去哪
+  if (!loggedIn && PROTECTED_PATHS.includes(pathname)) {
     const target = new URL('/login', request.url);
     target.searchParams.set('next', pathname);
     const response = NextResponse.redirect(target);
@@ -79,5 +82,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/login', '/register', '/workspace'],
+  matcher: ['/login', '/register', '/workspace', '/wallet'],
 };
