@@ -11,6 +11,10 @@ export function serializeSessionCookie(token: string, maxAgeSeconds: number): st
   ].join('; ');
 }
 
+export function clearSessionCookie(): string {
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+}
+
 export function readCookie(header: string | undefined, name: string): string | undefined {
   if (!header) {
     return undefined;

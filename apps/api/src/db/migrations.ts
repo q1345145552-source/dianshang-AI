@@ -27,6 +27,19 @@ const migrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions (user_id);
     `,
   },
+  {
+    name: '002_login_attempts',
+    sql: `
+      CREATE TABLE IF NOT EXISTS login_attempts (
+        id uuid PRIMARY KEY,
+        email text NOT NULL,
+        failed_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS login_attempts_email_time_idx
+        ON login_attempts (email, failed_at DESC);
+    `,
+  },
 ];
 
 export async function runMigrations(pool: Pool): Promise<void> {

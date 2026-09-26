@@ -28,6 +28,15 @@ export async function createSession(
 
 export type SessionUser = { id: string; email: string; created_at: Date };
 
+// 退出登录：把这条会话从库里删掉。
+// 只清浏览器的 cookie 不够，那样手里存着旧令牌的人还能接着用。
+export async function revokeSession(pool: Pool, token: string | undefined): Promise<void> {
+  if (!token) {
+    return;
+  }
+  await pool.query('DELETE FROM sessions WHERE token_hash = $1', [hashToken(token)]);
+}
+
 export async function findUserBySession(
   pool: Pool,
   token: string | undefined,
